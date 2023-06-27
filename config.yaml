@@ -1,0 +1,16 @@
+---
+region: us-west-2
+organization: zephyr
+stackName: scott-dev
+baseProject:
+  location: ../../../Code/Repos/zephyr-infra
+  name: zephyr-infra
+  nickname: base
+platformProject:
+  location: ../../../Code/Repos/zephyr-k8s
+  name: zephyr-k8s
+  nickname: platform
+appProject:
+  location: ../../../Code/Repos/zephyr-app/infra
+  name: zephyr-app
+  nickname: application
