@@ -26,6 +26,7 @@ type Environment struct {
 	BaseProject     Project `yaml:"baseProject"`
 	PlatformProject Project `yaml:"platformProject"`
 	AppProject      Project `yaml:"appProject"`
+	DataProject     Project `yaml:"dataProject"`
 }
 
 func main() {
@@ -72,6 +73,15 @@ func main() {
 	}
 	fmt.Printf("Successfully created/selected %s stack\n", env.PlatformProject.Nickname)
 
+	// Set up data stack
+	dataStackName := auto.FullyQualifiedStackName(env.Organization, env.DataProject.Name, env.StackName)
+	dataStack, err := auto.UpsertStackLocalSource(ctx, dataStackName, env.DataProject.Location)
+	if err != nil {
+		fmt.Printf("Failed to create or select %s stack: %v\n", env.DataProject.Nickname, err)
+		os.Exit(1)
+	}
+	fmt.Printf("Successfully created/selected %s stack\n", env.DataProject.Nickname)
+
 	// Set up application stack
 	appStackName := auto.FullyQualifiedStackName(env.Organization, env.AppProject.Name, env.StackName)
 	appStack, _ := auto.UpsertStackLocalSource(ctx, appStackName, env.AppProject.Location)
@@ -91,6 +101,11 @@ func main() {
 		_, err = deleteStack(ctx, platformStack, env.PlatformProject.Nickname)
 		if err != nil {
 			fmt.Printf("Error deleting %s stack: %v\n", env.PlatformProject.Nickname, err)
+			os.Exit(1)
+		}
+		_, err = deleteStack(ctx, dataStack, env.DataProject.Nickname)
+		if err != nil {
+			fmt.Printf("Error deleting %s stack: %v\n", env.DataProject.Nickname, err)
 			os.Exit(1)
 		}
 		_, err = deleteStack(ctx, baseStack, env.BaseProject.Nickname)
@@ -120,9 +135,9 @@ func main() {
 
 	// Set config values for platform stack
 	platformStack.SetConfig(ctx, "aws:region", auto.ConfigValue{Value: env.Region, Secret: false})
-	platformStack.SetConfig(ctx, "infraOrgName", auto.ConfigValue{Value: env.Organization, Secret: false})
-	platformStack.SetConfig(ctx, "infraProjName", auto.ConfigValue{Value: env.BaseProject.Name, Secret: false})
-	platformStack.SetConfig(ctx, "infraStackName", auto.ConfigValue{Value: env.StackName, Secret: false})
+	platformStack.SetConfig(ctx, "baseOrgName", auto.ConfigValue{Value: env.Organization, Secret: false})
+	platformStack.SetConfig(ctx, "baseProjName", auto.ConfigValue{Value: env.BaseProject.Name, Secret: false})
+	platformStack.SetConfig(ctx, "baseStackName", auto.ConfigValue{Value: env.StackName, Secret: false})
 
 	// Run a refresh on the platform stack
 	_, err = refreshStack(ctx, platformStack, env.PlatformProject.Nickname)
@@ -138,10 +153,33 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Set config values for the data stack
+	dataStack.SetConfig(ctx, "aws:region", auto.ConfigValue{Value: env.Region, Secret: false})
+	dataStack.SetConfig(ctx, "baseOrgName", auto.ConfigValue{Value: env.Organization, Secret: false})
+	dataStack.SetConfig(ctx, "baseProjName", auto.ConfigValue{Value: env.BaseProject.Name, Secret: false})
+	dataStack.SetConfig(ctx, "baseStackName", auto.ConfigValue{Value: env.StackName, Secret: false})
+
+	// Run a refresh on the data stack
+	_, err = refreshStack(ctx, dataStack, env.DataProject.Nickname)
+	if err != nil {
+		fmt.Printf("Error encountered refreshing %s stack: %v\n", env.DataProject.Nickname, err)
+		os.Exit(1)
+	}
+
+	// Run an update of the data stack
+	_, err = updateStack(ctx, dataStack, env.DataProject.Nickname)
+	if err != nil {
+		fmt.Printf("Error encountered updating %s stack: %v\n", env.DataProject.Nickname, err)
+		os.Exit(1)
+	}
+
 	// Set config values for app stack
-	appStack.SetConfig(ctx, "k8sOrgName", auto.ConfigValue{Value: env.Organization, Secret: false})
-	appStack.SetConfig(ctx, "k8sProjName", auto.ConfigValue{Value: env.PlatformProject.Name, Secret: false})
-	appStack.SetConfig(ctx, "k8sStackName", auto.ConfigValue{Value: env.StackName, Secret: false})
+	appStack.SetConfig(ctx, "platformOrgName", auto.ConfigValue{Value: env.Organization, Secret: false})
+	appStack.SetConfig(ctx, "dataOrgName", auto.ConfigValue{Value: env.Organization, Secret: false})
+	appStack.SetConfig(ctx, "platformProjName", auto.ConfigValue{Value: env.PlatformProject.Name, Secret: false})
+	appStack.SetConfig(ctx, "dataProjName", auto.ConfigValue{Value: env.DataProject.Name, Secret: false})
+	appStack.SetConfig(ctx, "platformStackName", auto.ConfigValue{Value: env.StackName, Secret: false})
+	appStack.SetConfig(ctx, "dataStackName", auto.ConfigValue{Value: env.StackName, Secret: false})
 
 	// Run a refresh on the app stack
 	_, err = refreshStack(ctx, appStack, env.AppProject.Nickname)
