@@ -1,6 +1,6 @@
-module zephyr-automation
+module zephyr-auto-remote-source
 
-go 1.19
+go 1.21
 
 require (
 	github.com/pulumi/pulumi/sdk/v3 v3.69.0

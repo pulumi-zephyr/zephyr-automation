@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 
@@ -36,9 +35,7 @@ func main() {
 	destroy := false
 	argsWithoutProg := os.Args[1:]
 	if len(argsWithoutProg) > 0 {
-		if argsWithoutProg[0] == "destroy" {
-			destroy = true
-		}
+		destroy = argsWithoutProg[0] == "destroy"
 	}
 
 	// Get configuration data
@@ -57,80 +54,78 @@ func main() {
 	// Set up context
 	ctx := context.Background()
 
-	// Call the setupStack function to set up each of the four stacks
-	// Set up base stack
-	baseStack, err := setupStack(ctx, env.Organization, env.StackName, env.BaseProject)
-	if err != nil {
-		fmt.Printf("Error encountered setting up %s stack: %v\n", env.BaseProject.Name, err)
-		os.Exit(1)
+	// Set up each of the four stacks
+	// First, define a lambda expression that calls setupStack and does error checking
+	setup := func(p Project) auto.Stack {
+		stack, err := setupStack(ctx, env.Organization, env.StackName, p)
+		if err != nil {
+			fmt.Printf("Error encountered setting up %s stack: %v\n", p.Name, err)
+			os.Exit(1)
+		}
+		return stack
 	}
+
+	// Set up base stack
+	baseStack := setup(env.BaseProject)
 
 	// Set up platform stack
-	platformStack, err := setupStack(ctx, env.Organization, env.StackName, env.PlatformProject)
-	if err != nil {
-		fmt.Printf("Error encountered setting up %s stack: %v\n", env.PlatformProject.Name, err)
-		os.Exit(1)
-	}
+	platformStack := setup(env.PlatformProject)
 
 	// Set up data stack
-	dataStack, err := setupStack(ctx, env.Organization, env.StackName, env.DataProject)
-	if err != nil {
-		fmt.Printf("Error encountered setting up %s stack: %v\n", env.DataProject.Name, err)
-		os.Exit(1)
-	}
+	dataStack := setup(env.DataProject)
 
 	// Set up application stack
-	appStack, err := setupStack(ctx, env.Organization, env.StackName, env.AppProject)
-	if err != nil {
-		fmt.Printf("Error encountered setting up %s stack: %v\n", env.AppProject.Name, err)
-		os.Exit(1)
-	}
+	appStack := setup(env.AppProject)
 
-	// If destroy is true, call deleteStack function to destroy stacks
+	// If destroy is true, destroy each of the stacks
 	// The order of operations is important; app, platform, data, base
+	// First, define a lambda expression to call deleteStack and handle error checking
+	delete := func(s auto.Stack, n string) auto.DestroyResult {
+		res, err := deleteStack(ctx, s, n)
+		if err != nil {
+			fmt.Printf("Error encountered deleting %s stack: %v\n", n, err)
+			os.Exit(1)
+		}
+		return res
+	}
+	// Delete the stacks if destroy is true
 	if destroy {
-		_, err := deleteStack(ctx, appStack, env.AppProject.Name)
-		if err != nil {
-			fmt.Printf("Error deleting %s stack: %v\n", env.AppProject.Name, err)
-			os.Exit(1)
-		}
-		_, err = deleteStack(ctx, platformStack, env.PlatformProject.Name)
-		if err != nil {
-			fmt.Printf("Error deleting %s stack: %v\n", env.PlatformProject.Name, err)
-			os.Exit(1)
-		}
-		_, err = deleteStack(ctx, dataStack, env.DataProject.Name)
-		if err != nil {
-			fmt.Printf("Error deleting %s stack: %v\n", env.DataProject.Name, err)
-			os.Exit(1)
-		}
-		_, err = deleteStack(ctx, baseStack, env.BaseProject.Name)
-		if err != nil {
-			fmt.Printf("Error deleting %s stack: %v\n", env.BaseProject.Name, err)
-			os.Exit(1)
-		}
-		os.Exit(0)
+		_ = delete(appStack, env.AppProject.Name)
+		_ = delete(platformStack, env.PlatformProject.Name)
+		_ = delete(dataStack, env.DataProject.Name)
+		_ = delete(baseStack, env.BaseProject.Name)
+		return
 	}
 
 	// Destroy was not true, so set config, refresh, and then update
 	// Call the refreshStack function to refresh the stacks
 	// Call the updateStack function to update the stacks
+	// First, define lambda expressions to call refreshStack and updateStack and handle error checking
+	refresh := func(s auto.Stack, n string) auto.RefreshResult {
+		res, err := refreshStack(ctx, s, n)
+		if err != nil {
+			fmt.Printf("Error encountered refreshing %s stack: %v\n", n, err)
+			os.Exit(1)
+		}
+		return res
+	}
+	update := func(s auto.Stack, n string) auto.UpResult {
+		res, err := updateStack(ctx, s, n)
+		if err != nil {
+			fmt.Printf("Error encountered updating %s stack: %v\n", n, err)
+			os.Exit(1)
+		}
+		return res
+	}
+
 	// Set config values for base stack
 	baseStack.SetConfig(ctx, "aws:region", auto.ConfigValue{Value: env.Region, Secret: false})
 
 	// Run a refresh on the base stack
-	_, err = refreshStack(ctx, baseStack, env.BaseProject.Name)
-	if err != nil {
-		fmt.Printf("Error encountered refreshing %s stack: %v\n", env.BaseProject.Name, err)
-		os.Exit(1)
-	}
+	_ = refresh(baseStack, env.BaseProject.Name)
 
 	// Run an update of the base stack
-	_, err = updateStack(ctx, baseStack, env.BaseProject.Name)
-	if err != nil {
-		fmt.Printf("Error encountered updating %s stack: %v\n", env.BaseProject.Name, err)
-		os.Exit(1)
-	}
+	_ = update(baseStack, env.BaseProject.Name)
 
 	// Set config values for platform stack
 	platformStack.SetConfig(ctx, "aws:region", auto.ConfigValue{Value: env.Region, Secret: false})
@@ -139,18 +134,10 @@ func main() {
 	platformStack.SetConfig(ctx, "baseStackName", auto.ConfigValue{Value: env.StackName, Secret: false})
 
 	// Run a refresh on the platform stack
-	_, err = refreshStack(ctx, platformStack, env.PlatformProject.Name)
-	if err != nil {
-		fmt.Printf("Error encountered refreshing %s stack: %v\n", env.PlatformProject.Name, err)
-		os.Exit(1)
-	}
+	_ = refresh(platformStack, env.PlatformProject.Name)
 
 	// Run an update of the platform stack
-	_, err = updateStack(ctx, platformStack, env.PlatformProject.Name)
-	if err != nil {
-		fmt.Printf("Error encountered updating %s stack: %v\n", env.PlatformProject.Name, err)
-		os.Exit(1)
-	}
+	_ = update(platformStack, env.PlatformProject.Name)
 
 	// Set config values for the data stack
 	dataStack.SetConfig(ctx, "aws:region", auto.ConfigValue{Value: env.Region, Secret: false})
@@ -159,18 +146,10 @@ func main() {
 	dataStack.SetConfig(ctx, "baseStackName", auto.ConfigValue{Value: env.StackName, Secret: false})
 
 	// Run a refresh on the data stack
-	_, err = refreshStack(ctx, dataStack, env.DataProject.Name)
-	if err != nil {
-		fmt.Printf("Error encountered refreshing %s stack: %v\n", env.DataProject.Name, err)
-		os.Exit(1)
-	}
+	_ = refresh(dataStack, env.DataProject.Name)
 
 	// Run an update of the data stack
-	_, err = updateStack(ctx, dataStack, env.DataProject.Name)
-	if err != nil {
-		fmt.Printf("Error encountered updating %s stack: %v\n", env.DataProject.Name, err)
-		os.Exit(1)
-	}
+	_ = update(dataStack, env.DataProject.Name)
 
 	// Set config values for app stack
 	appStack.SetConfig(ctx, "platformOrgName", auto.ConfigValue{Value: env.Organization, Secret: false})
@@ -181,18 +160,10 @@ func main() {
 	appStack.SetConfig(ctx, "dataStackName", auto.ConfigValue{Value: env.StackName, Secret: false})
 
 	// Run a refresh on the app stack
-	_, err = refreshStack(ctx, appStack, env.AppProject.Name)
-	if err != nil {
-		fmt.Printf("Error encountered refreshing %s stack: %v\n", env.AppProject.Name, err)
-		os.Exit(1)
-	}
+	_ = refresh(appStack, env.AppProject.Name)
 
 	// Run an update of the app stack
-	_, err = updateStack(ctx, appStack, env.AppProject.Name)
-	if err != nil {
-		fmt.Printf("Error encountered updating %s stack: %v\n", env.AppProject.Name, err)
-		os.Exit(1)
-	}
+	_ = update(appStack, env.AppProject.Name)
 }
 
 func refreshStack(ctx context.Context, s auto.Stack, n string) (auto.RefreshResult, error) {
@@ -203,8 +174,8 @@ func refreshStack(ctx context.Context, s auto.Stack, n string) (auto.RefreshResu
 		fmt.Printf("Error creating temporary file: %v\n", err)
 		return res, err
 	}
-	progressStreams := []io.Writer{os.Stdout, tmp}
-	res, err = s.Refresh(ctx, optrefresh.ProgressStreams(progressStreams...))
+	progressStreams := optrefresh.ProgressStreams(os.Stdout, tmp)
+	res, err = s.Refresh(ctx, progressStreams)
 	if err != nil {
 		fmt.Printf("Failed to refresh %s stack: %v\n", n, err)
 		return res, err
@@ -222,8 +193,8 @@ func updateStack(ctx context.Context, s auto.Stack, n string) (auto.UpResult, er
 		fmt.Printf("Error creating temporary file: %v\n", err)
 		return res, err
 	}
-	progressStreams := []io.Writer{os.Stdout, tmp}
-	res, err = s.Up(ctx, optup.ProgressStreams(progressStreams...))
+	progressStreams := optup.ProgressStreams(os.Stdout, tmp)
+	res, err = s.Up(ctx, progressStreams)
 	if err != nil {
 		fmt.Printf("Failed to update %s stack: %v\n", n, err)
 		return res, err
@@ -240,8 +211,8 @@ func deleteStack(ctx context.Context, s auto.Stack, n string) (auto.DestroyResul
 		fmt.Printf("Error creating temporary file: %v\n", err)
 		return res, err
 	}
-	progressStreams := []io.Writer{os.Stdout, tmp}
-	res, err = s.Destroy(ctx, optdestroy.ProgressStreams(progressStreams...))
+	progressStreams := optdestroy.ProgressStreams(os.Stdout, tmp)
+	res, err = s.Destroy(ctx, progressStreams)
 	if err != nil {
 		fmt.Printf("Error destroying %s stack: %v\n", n, err)
 		return res, err
