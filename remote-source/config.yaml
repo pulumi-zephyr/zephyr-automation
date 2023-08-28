@@ -1,0 +1,21 @@
+---
+region: us-west-2
+organization: zephyr
+stackName: scott-dev
+appProject:
+  branch: blog/automation-api
+  location: https://github.com/pulumi/zephyr-app.git
+  name: zephyr-app
+  path: infra
+baseProject:
+  branch: blog/automation-api
+  location: https://github.com/pulumi/zephyr-infra.git
+  name: zephyr-infra
+dataProject:
+  branch: blog/automation-api
+  location: https://github.com/pulumi/zephyr-data.git
+  name: zephyr-data
+platformProject:
+  branch: blog/automation-api
+  location: https://github.com/pulumi/zephyr-k8s.git
+  name: zephyr-k8s
